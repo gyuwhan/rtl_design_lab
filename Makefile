@@ -46,6 +46,7 @@ lint: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
 	verilator --lint-only -Wall --top-module $(TOP) $(RTL_SRC) \
 		2>&1 | tee $(SIM_DIR)/$(TOP)_lint.log
+		@echo "$(TOP) lint 통과"
 
 synth-check: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
