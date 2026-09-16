@@ -1,4 +1,4 @@
-]633;E;date -u +"Recorded at: %Y-%m-%dT%H:%M:%SZ";07651b05-8cc8-4cb4-8ffa-3fdce8ca9837]633;CRecorded at: 2026-09-16T05:39:27Z
+Recorded at: 2026-09-16T05:39:27Z
 PRETTY_NAME="Ubuntu 24.04.5 LTS"
 NAME="Ubuntu"
 VERSION_ID="24.04"
