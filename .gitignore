@@ -1,0 +1,27 @@
+# Generated simulation and build outputs
+/sim/
+/build/
+/obj_dir/
+*.vcd
+*.fst
+*.vvp
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Vivado-generated directories and local session files
+.Xil/
+*.cache/
+*.runs/
+*.sim/
+*.hw/
+*.jou
+/vivado*.log
