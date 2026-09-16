@@ -6,7 +6,7 @@ SHELL := /bin/bash
 EXC := clean help
 ifneq ($(filter-out $(EXC),$(MAKECMDGOALS)),)
 	ifeq ($(strip $(TOP)),)
-		$(error TOP is required. Usage: make <target> TOP=<module>)
+		$(error TOP 모듈을 지정해주세요. 사용방법: make <target> TOP=<module>)
 	endif
 endif
 
@@ -39,8 +39,8 @@ sim: $(RTL_SRC) $(TB_SRC)
 	vvp $(OUT_VVP) 2>&1 | tee $(SIM_DIR)/$(TOP)_run.log
 
 wave: sim
-	@test -f $(OUT_VCD) || { echo "Missing $(OUT_VCD): check TB dump settings."; exit 1; }
-	gtkwave $(OUT_VCD)
+	@test -f $(OUT_VCD) || { echo "$(OUT_VCD)파일이 없습니다.: TB dump를 확인하세요."; exit 1; }
+	gtkwave $(OUT_VCD) &
 
 lint: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
@@ -51,9 +51,9 @@ synth-check: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
 	yosys -p "read_verilog -sv $(RTL_SRC); hierarchy -check -top $(TOP); proc; opt; check -assert; stat" \
 		2>&1 | tee $(SIM_DIR)/$(TOP)_synth.log
-	@echo "Structural checks completed. Inspect the log for inferred latches."
+	@echo "합성 구조 검사 완료. 로그에서 래치를 확인하세요."
 
 clean:
 	rm -f $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd $(SIM_DIR)/*.log
 	rm -rf obj_dir
-	@echo "Generated files removed."
+	@echo "시뮬레이션 파일 삭제 완료."
