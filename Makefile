@@ -3,6 +3,8 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
+TOP ?= $(top)
+
 EXC := clean help
 ifneq ($(filter-out $(EXC),$(MAKECMDGOALS)),)
 	ifeq ($(strip $(TOP)),)
@@ -20,7 +22,7 @@ TB_TOP := tb_$(TOP)
 OUT_VVP := $(SIM_DIR)/$(TOP).vvp
 OUT_VCD := $(SIM_DIR)/$(TOP).vcd
 
-.PHONY: help sim wave lint synth-check clean
+.PHONY: help sim wave lint synth-check clean check
 
 help:
 	@echo "사용방법: make <target> TOP=<module>"
@@ -28,6 +30,7 @@ help:
 	@echo "wave        시뮬레이션 후 <module>.vcd 파일 확인 후 gtkwave로 실행"
 	@echo "lint        Verilator lint 실행; 로그 저장;"
 	@echo "synth-check Yosys 합성 구조 검사; 로그 저장"
+	@echo "check       sim, lint, synth-check 순차 실행"
 	@echo "clean       시뮬레이션 파일 삭제"
 	@echo "예시: make sim TOP=mux2to1"
 
@@ -58,3 +61,5 @@ clean:
 	rm -f $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd $(SIM_DIR)/*.log
 	rm -rf obj_dir
 	@echo "시뮬레이션 파일 삭제 완료."
+
+check : sim lint synth-check
