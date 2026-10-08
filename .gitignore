@@ -24,4 +24,11 @@ Thumbs.db
 *.sim/
 *.hw/
 *.jou
+*.gen/
+*.ip_user_files/
+*.str
 /vivado*.log
+
+# cocotb
+sim_build/
+results.xml

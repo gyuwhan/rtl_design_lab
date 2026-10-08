@@ -9,3 +9,6 @@
 *.xdc text eol=lf
 *.md text eol=lf
 Makefile text eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
