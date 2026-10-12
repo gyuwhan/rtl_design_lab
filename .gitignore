@@ -32,3 +32,5 @@ Thumbs.db
 # cocotb
 sim_build/
 results.xml
+
+tmp/
