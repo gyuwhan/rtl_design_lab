@@ -21,6 +21,7 @@ TB_SRC := $(TB_DIR)/tb_$(TOP).v
 TB_TOP := tb_$(TOP)
 OUT_VVP := $(SIM_DIR)/$(TOP).vvp
 OUT_VCD := $(SIM_DIR)/$(TOP).vcd
+SYNTH_LOG := $(SIM_DIR)/$(TOP)_synth.log
 
 .PHONY: help sim wave lint synth-check clean check
 
@@ -53,9 +54,12 @@ lint: $(RTL_SRC)
 
 synth-check: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
-	yosys -p "read_verilog -sv $(RTL_SRC); hierarchy -check -top $(TOP); proc; opt; check -assert; stat" \
-		2>&1 | tee $(SIM_DIR)/$(TOP)_synth.log
-	@echo "합성 구조 검사 완료. 로그에서 래치를 확인하세요."
+	@yosys -p "read_verilog -sv $(RTL_SRC); hierarchy -check -top $(TOP); proc; opt; check -assert; stat" \
+		> $(SYNTH_LOG) 2>&1 \
+		|| { grep -E "ERROR|Warning" $(SYNTH_LOG); echo "합성 검사 실패: $(SYNTH_LOG)"; exit 1; }
+	@grep -E "Warning|^Latch inferred|Creating register|problems" $(SYNTH_LOG)
+	@if grep -q "^Latch inferred" $(SYNTH_LOG); then echo "래치 발견: $(SYNTH_LOG)"; exit 1; fi
+	@echo "$(TOP) 합성 검사 통과 (전체 로그: $(SYNTH_LOG))"
 
 clean:
 	rm -f $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd $(SIM_DIR)/*.log
