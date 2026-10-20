@@ -66,7 +66,7 @@ always @(posedge clk) begin
     else if((elem_cnt <= 3'd1) && addr_last) addr_cnt <= 8'd0;
     else if((elem_cnt >= 3'd2) && addr_last) addr_cnt <= 8'd255;
     else if(up && (state == WR)) addr_cnt <= addr_cnt + 8'd1;
-    else if(!up && (elem_cnt == 3'd5)) addr_cnt <= addr_cnt - 8'd1;
+    else if((state == RD) && (elem_cnt == 3'd5)) addr_cnt <= addr_cnt - 8'd1;
     else if(!up && (state == WR)) addr_cnt <= addr_cnt - 8'd1;
 end
 
