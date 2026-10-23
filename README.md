@@ -19,7 +19,7 @@ Verilog로 디지털 기본 블록을 설계하고 self-checking 테스트벤치
 |---|---|
 | `rtl/` | 설계 코드 |
 | `tb/` | 테스트벤치 |
-| `docs/` | 환경 기록 |
+| `docs/` | 환경 기록, 모듈별 설계 문서 |
 | `sim/` | 실행 파일, 로그, 파형 (Git 추적 제외) |
 
 ## 실행 방법
@@ -45,6 +45,27 @@ make clean                       # sim/의 생성 파일 삭제
 PASS/FAIL은 테스트벤치가 판정합니다. Yosys 검사가 에러 없이 끝나도 latch가 없다는 뜻은 아니므로,
 로그 끝의 부품 목록에서 `$dlatch` 유무를 직접 확인합니다. FPGA 타이밍 충족도 이 검사로는 확인하지 않습니다.
 
+### RTL 파일이 여러 개인 TB
+
+`make sim`은 RTL 파일 하나와 같은 이름의 TB를 기준으로 합니다. 아래 TB는 직접 컴파일합니다.
+`lint`, `synth-check`는 모듈마다 `make`로 실행할 수 있습니다.
+
+```bash
+# 1011 검출기: Moore/Mealy 공용 TB
+iverilog -g2012 -Wall -Wno-timescale -s tb_seq_det_1011 -o sim/seq_det_1011.vvp \
+    tb/tb_seq_det_1011.v rtl/seq_det_1011_moore.v rtl/seq_det_1011_mealy.v
+vvp sim/seq_det_1011.vvp
+
+# SRAM BIST: SRAM 모델과 함께
+iverilog -g2012 -Wall -Wno-timescale -s tb_sram_bist -o sim/sram_bist.vvp \
+    tb/tb_sram_bist.v rtl/sram_bist.v rtl/sram.v
+vvp sim/sram_bist.vvp
+
+iverilog -g2012 -Wall -Wno-timescale -s tb_sram_bist_march -o sim/sram_bist_march.vvp \
+    tb/tb_sram_bist_march.v rtl/sram_bist_march.v rtl/sram.v
+vvp sim/sram_bist_march.vvp
+```
+
 ## 모듈
 
 ### 조합회로
@@ -65,6 +86,23 @@ PASS/FAIL은 테스트벤치가 판정합니다. Yosys 검사가 에러 없이 �
 | `param_shift_reg` | 병렬 load, 양방향 shift (`WIDTH` ≥ 2) | 9단계 기대값 비교. 방향, 유지, 리셋 |
 | `edge_detector` | 상승/하강 엣지 검출, 레지스터 출력 (입력은 동기 신호로 가정) | 14클럭 순서열 비교. 출력이 1클럭 늦고 폭이 1클럭 |
 | `register_2r1w` | 16 x 16비트 register file, 읽기 2 / 쓰기 1, 조합 읽기 | 쓰기와 읽기, 두 창구의 write-first 우회(엣지 전 확인), `w_en`=0일 때 우회와 쓰기 차단 |
+
+### FSM과 인터페이스
+
+| 모듈 | 하는 일 | 확인한 것 |
+|---|---|---|
+| `seq_det_1011_moore`, `seq_det_1011_mealy` | "1011" 검출기 (overlapping 허용). Moore는 검출 다음 클럭, Mealy는 검출 즉시 `det` | 공용 TB로 같은 입력을 넣어 비교. overlapping 2회 검출, 검출 없는 순서열, 검출 후 상태 복귀. 출력 시점 차이와 Mealy의 짧은 펄스는 [docs/moore_mealy.md](docs/moore_mealy.md)에 정리 |
+| `vr_proc` | valid/ready로 8비트 1개를 받아 `PROC_CYCLES` 클럭 처리 후 valid/ready로 내보냄 | 사이클별 예측표와 비교. 처리 중 `in_ready`=0, 응답 대기 중 `out_valid`·`out_data` 유지, 응답을 보내는 사이클에 다음 요청 수신. RESP의 `in_ready = out_ready`를 지우면 TB가 FAIL을 내는지 확인 |
+
+### 메모리 테스트 (BIST)
+
+| 모듈 | 하는 일 | 확인한 것 |
+|---|---|---|
+| `sram` | 시뮬레이션용 단일 포트 동기 SRAM (256 x 10비트). 읽기 지연 1, 쓸 때도 읽기 주소 갱신 | 아래 두 BIST TB에서 함께 사용 |
+| `sram_bist` | 교육 과제 사양으로 다시 만든 BIST. 전체 주소에 3FF → 000 → 2AA를 쓰고 읽어 비교 | 정상이면 1541사이클에 완료. 첫 패턴 0번지, 마지막 패턴 255번지 고장의 검출 사이클 확인. 첫 주소 비교 제외와 마지막 비교 상태를 지우면 TB가 FAIL을 내는지 확인. 플립플롭 16개 |
+| `sram_bist_march` | March C- BIST. ⇑(w0) → ⇑(r0,w1) → ⇑(r1,w0) → ⇓(r0,w1) → ⇓(r1,w0) → ⇓(r0) | 정상이면 2563사이클에 완료. 동작 중과 `DONE`에서 `bist_en` 무시. 원소 4(152번지), 원소 5(0번지) 고장의 검출 사이클 확인. RTL에 버그 2개를 넣어 TB가 잡는지 확인 (그중 하나는 고장 주입 시점을 옮겨야 잡힘). 플립플롭 17개 |
+
+고장은 TB가 SRAM 모델의 값을 한 번 바꿔 넣는 방식입니다. 계속 고정된 stuck-at 고장이나 coupling·주소 디코더 고장은 SRAM 모델에 구현하지 않았으므로, 확인한 범위는 값을 바꿔 넣은 고장의 검출까지입니다.
 
 ### 실험
 
