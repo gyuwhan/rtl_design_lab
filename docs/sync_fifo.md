@@ -64,6 +64,52 @@
 | wrap-around | 누적으로 DEPTH보다 많이 쓰고 읽기 | 한 바퀴 넘은 뒤에도 쓴 순서대로 나오고, DEPTH만큼 차면 다시 full = 1 |
 | rd_data 타이밍 | empty = 0에서 rd_en = 1 | 읽기가 받아들여진 사이클의 다음 클럭에 rd_data가 바뀐다. 1개 쓰고 읽으면 그 클럭에 empty = 1 |
 
+### 랜덤 TB 설계 (tb/tb_sync_fifo_rand.v)
+
+DUT 파라미터: DEPTH = 4, WIDTH = 10
+
+#### 랜덤 입력
+
+- 랜덤으로 줄 신호: wr_en, rd_en, wr_data
+- 확률: wr_en 55%, rd_en 50% (각각 독립)
+- 사이클 수: 1000
+- seed: 1 (integer 변수, $random(seed))
+- 경계 도달 확인: ref_cnt == DEPTH인 사이클 수, ref_cnt == 0인 사이클 수를 따로 세서 마지막에 출력.
+
+#### 참조 모델
+
+- 변수: [WIDTH-1:0]ref_q[0:DEPTH-1], [$clog2(DEPTH):0]ref_cnt
+- 쓰기를 받는 조건: ref_cnt < DEPTH
+- 읽기를 받는 조건: ref_cnt > 0
+- 기대 full / 기대 empty: ref_cnt == DEPTH, ref_cnt == 0
+- 쓰기만 받을 때: ref_q[ref_cnt]에 쓰기, ref_cnt + 1
+- 읽기만 받을 때: ref_q[0]값 읽기, ref_cnt - 1, ref_q 내부 한 칸씩 당김
+- 둘 다 받을 때: ref_q[0]값 읽고, ref_q 내부 한 칸씩 당긴 후,ref_cnt -1. 이후 ref_q[ref_cnt]에 쓰기, ref_cnt + 1,
+- 기대 rd_data: 읽기를 받은 사이클의 다음 클럭에 출력, 읽기 받지 않을 경우 기존 rd_data 유지
+- reset: ref_cnt = 0, rd_data = 0, full = 0, empty = 1
+
+#### 비교 시점
+- 입력 넣기: negedge clk (posedge에 넣으면 DUT와 race)
+- 참조 모델 갱신: posedge clk (DUT와 같은 입력을 같은 시점에 받기 위해)
+- 받을지 판단 기준: 갱신 **전** ref_cnt로 판단. ref_cnt != DEPTH면 쓰기, ref_cnt != 0이면 읽기를 받는다. 참조 모델은 DUT 출력(full, empty)을 읽지 않는다
+- 비교 시점: negedge에서, 새 입력을 넣기 전
+- 비교 항목:
+  - full ↔ (ref_cnt == DEPTH)
+  - empty ↔ (ref_cnt == 0)
+  - rd_data ↔ ref_rd_data (rd_en && ref_cnt != 0일 때 저장한 ref_q[0])
+
+#### 경계 도달 확인
+- ref_cnt == DEPTH인 사이클 수, ref_cnt == 0인 사이클 수를 따로 세서 마지막에 출력
+- 0이면 PASS라도 "경계 미도달"로 표시
+
+#### 한 사이클 흐름
+
+    negedge      : TB가 직전 결과를 비교 → wr_en, rd_en, wr_data를 넣음
+    (사이클 동안) : 지금 full·empty(참조 모델은 ref_cnt)로 쓰기·읽기를 받을지 정해져 있음
+    posedge      : 받은 쪽 포인터(ref_cnt) 갱신, 쓰기면 mem(ref_q) 저장, 읽기면 rd_data(ref_rd_data) 갱신
+    posedge 직후 : 새 포인터로 full·empty가 다시 계산됨
+    다음 negedge : 비교 → 다음 입력
+    
 ### 검증 결과
 
 - TB에서 DEPTH = 4로 인스턴스하고 예측표 순서대로 입력, 매 사이클 full, empty, rd_data 비교 -> PASS 확인
@@ -92,3 +138,4 @@
 - PTR은 DEPTH에서 계산되므로 localparam으로 둠
 - mem에 reset은 각 셀에 0을 WRITE 하는 로직으로 합성되어 면적, 자원을 차지하고, mem에 reset을 하지 않아도 write가 되어 empty가 아닌 경우에만 read가 가능하므로 이전 값이 무엇이든 write로 덮어쓰기가 먼저 진행되어 reset 기능을 추가하지 않음
 - mem 쓰기를 reset으로 막지 않음 — reset 후 포인터가 0이라 그 값은 읽히지 않음
+
