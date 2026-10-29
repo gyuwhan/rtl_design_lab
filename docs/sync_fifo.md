@@ -89,6 +89,7 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 - reset: ref_cnt = 0, rd_data = 0, full = 0, empty = 1
 
 #### 비교 시점
+
 - 입력 넣기: negedge clk (posedge에 넣으면 DUT와 race)
 - 참조 모델 갱신: posedge clk (DUT와 같은 입력을 같은 시점에 받기 위해)
 - 받을지 판단 기준: 갱신 **전** ref_cnt로 판단. ref_cnt != DEPTH면 쓰기, ref_cnt != 0이면 읽기를 받는다. 참조 모델은 DUT 출력(full, empty)을 읽지 않는다
@@ -109,7 +110,18 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
     posedge      : 받은 쪽 포인터(ref_cnt) 갱신, 쓰기면 mem(ref_q) 저장, 읽기면 rd_data(ref_rd_data) 갱신
     posedge 직후 : 새 포인터로 full·empty가 다시 계산됨
     다음 negedge : 비교 → 다음 입력
-    
+
+#### 랜덤 TB (tb/tb_sync_fifo_rand.v)
+
+- 참조 모델(배열 당기기 + count)과 매 사이클 full, empty, rd_data 비교 → PASS
+  - 조건: DEPTH = 4, WIDTH = 10, seed 1, 1000사이클, wr_en 55% / rd_en 50%
+  - 경계 도달: full 158사이클, empty 89사이클
+  - CYCLES를 10으로 줄였을 때 full 도달 0 → 미도달 메시지가 나오는 것도 확인
+- 버그 주입 1 (wr_accept에서 !full 제거): 16사이클 full 오류로 처음 검출. 같은 seed로 다시 돌려 15사이클 값을 출력해 보니 full에서 wr_en = 1(wr_data = 105)이 들어왔고, 17사이클 첫 읽기에서 참조 모델은 300, DUT는 덮어쓴 105를 내보냄. 이후 에러가 계속 이어짐
+- 버그 주입 2 (empty를 주소 비트만 비교): 14사이클 full 첫 도달 시점에 empty 오류로 처음 검출. 이후 DUT가 full = 1, empty = 1로 멈춤
+- 버그 2를 넣을 때 [PTR-2:0] 대신 [PTR-2]로 잘못 넣었는데, 랜덤 TB가 3사이클에서 바로 검출. 한 번 쓴 뒤에도 empty = 1로 남는 것을 보고, 1번 비트 하나만 비교하고 있었음을 확인
+- 버그를 되돌린 뒤 다시 PASS 확인
+
 ### 검증 결과
 
 - TB에서 DEPTH = 4로 인스턴스하고 예측표 순서대로 입력, 매 사이클 full, empty, rd_data 비교 -> PASS 확인
