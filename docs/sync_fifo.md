@@ -85,8 +85,8 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 - 쓰기만 받을 때: ref_q[ref_cnt]에 쓰기, ref_cnt + 1
 - 읽기만 받을 때: ref_q[0]값 읽기, ref_cnt - 1, ref_q 내부 한 칸씩 당김
 - 둘 다 받을 때: ref_q[0]값 읽고, ref_q 내부 한 칸씩 당긴 후,ref_cnt -1. 이후 ref_q[ref_cnt]에 쓰기, ref_cnt + 1,
-- 기대 rd_data: 읽기를 받은 사이클의 다음 클럭에 출력, 읽기 받지 않을 경우 기존 rd_data 유지
-- reset: ref_cnt = 0, rd_data = 0, full = 0, empty = 1
+- 기대 rd_data_ref: 읽기를 받은 사이클의 다음 클럭에 출력, 읽기 받지 않을 경우 기존 rd_data_ref 유지
+- reset: ref_cnt = 0, rd_data_ref = 0, full_ref = 0, empty_ref = 1
 
 #### 비교 시점
 
@@ -95,9 +95,9 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 - 받을지 판단 기준: 갱신 **전** ref_cnt로 판단. ref_cnt != DEPTH면 쓰기, ref_cnt != 0이면 읽기를 받는다. 참조 모델은 DUT 출력(full, empty)을 읽지 않는다
 - 비교 시점: negedge에서, 새 입력을 넣기 전
 - 비교 항목:
-  - full ↔ (ref_cnt == DEPTH)
-  - empty ↔ (ref_cnt == 0)
-  - rd_data ↔ ref_rd_data (rd_en && ref_cnt != 0일 때 저장한 ref_q[0])
+  - full_msb !== (ref_cnt == DEPTH)
+  - empty_msb !== (ref_cnt == 0)
+  - rd_data_msb ↔ rd_data_ref (rd_en && ref_cnt != 0일 때 저장한 ref_q[0])
 
 #### 경계 도달 확인
 - ref_cnt == DEPTH인 사이클 수, ref_cnt == 0인 사이클 수를 따로 세서 마지막에 출력
@@ -107,7 +107,7 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 
     negedge      : TB가 직전 결과를 비교 → wr_en, rd_en, wr_data를 넣음
     (사이클 동안) : 지금 full·empty(참조 모델은 ref_cnt)로 쓰기·읽기를 받을지 정해져 있음
-    posedge      : 받은 쪽 포인터(ref_cnt) 갱신, 쓰기면 mem(ref_q) 저장, 읽기면 rd_data(ref_rd_data) 갱신
+    posedge      : 받은 쪽 포인터(ref_cnt) 갱신, 쓰기면 mem(ref_q) 저장, 읽기면 rd_data(rd_data_ref) 갱신
     posedge 직후 : 새 포인터로 full·empty가 다시 계산됨
     다음 negedge : 비교 → 다음 입력
 
