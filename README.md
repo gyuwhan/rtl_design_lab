@@ -1,7 +1,7 @@
 # RTL Design Lab
 
 Verilog로 디지털 기본 블록을 설계하고 self-checking 테스트벤치로 검증하는 개인 학습 저장소입니다.
-모듈마다 사양을 RTL 상단 주석에 적고, 테스트벤치가 기대값과 비교해 PASS/FAIL을 판정합니다.
+모듈마다 사양을 RTL 상단 주석이나 `docs/`의 설계 문서에 적고, 테스트벤치가 기대값과 비교해 PASS/FAIL을 판정합니다.
 
 ## 개발 환경
 
@@ -64,6 +64,11 @@ vvp sim/sram_bist.vvp
 iverilog -g2012 -Wall -Wno-timescale -s tb_sram_bist_march -o sim/sram_bist_march.vvp \
     tb/tb_sram_bist_march.v rtl/sram_bist_march.v rtl/sram.v
 vvp sim/sram_bist_march.vvp
+
+# Sync FIFO: 랜덤 TB (참조 모델 비교)
+iverilog -g2012 -Wall -Wno-timescale -s tb_sync_fifo_rand -o sim/sync_fifo_rand.vvp \
+    tb/tb_sync_fifo_rand.v rtl/sync_fifo.v
+vvp sim/sync_fifo_rand.vvp
 ```
 
 ## 모듈
@@ -103,6 +108,13 @@ vvp sim/sram_bist_march.vvp
 | `sram_bist_march` | March C- BIST. ⇑(w0) → ⇑(r0,w1) → ⇑(r1,w0) → ⇓(r0,w1) → ⇓(r1,w0) → ⇓(r0) | 정상이면 2563사이클에 완료. 동작 중과 `DONE`에서 `bist_en` 무시. 원소 4(152번지), 원소 5(0번지) 고장의 검출 사이클 확인. RTL에 버그 2개를 넣어 TB가 잡는지 확인 (그중 하나는 고장 주입 시점을 옮겨야 잡힘). 플립플롭 17개 |
 
 고장은 TB가 SRAM 모델의 값을 한 번 바꿔 넣는 방식입니다. 계속 고정된 stuck-at 고장이나 coupling·주소 디코더 고장은 SRAM 모델에 구현하지 않았으므로, 확인한 범위는 값을 바꿔 넣은 고장의 검출까지입니다.
+
+### FIFO
+
+| 모듈 | 하는 일 | 확인한 것 |
+|---|---|---|
+| `sync_fifo` | 파라미터화한 동기 FIFO (`DEPTH`는 2 이상의 2의 거듭제곱). 포인터에 1비트를 더한 extra MSB 방식으로 full/empty 판정. full이면 쓰기, empty면 읽기 무시. `rd_data`는 읽기를 받은 다음 클럭에 출력 | TB: DEPTH 4 사이클별 예측표 순서로 입력해 매 사이클 비교 (동시 R/W, full에서 쓰기, empty에서 읽기, wrap-around 2회). 랜덤 TB(`tb_sync_fifo_rand`): count 방식 참조 모델과 비교, seed 1, 1000사이클, full 158, empty 89사이클 도달 확인. RTL에 버그 2개를 넣어 두 TB 모두 FAIL을 내는지 확인. lint는 기본값과 DEPTH=16·WIDTH=8에서 모두 경고 0개. 사양·예측표·설계 결정은 [docs/sync_fifo.md](docs/sync_fifo.md) |
+
 
 ### 실험
 
