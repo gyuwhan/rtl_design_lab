@@ -45,7 +45,9 @@
 
 ## 4. TB 시나리오
 
-clk_src posedge: 5, 15, 25, … ns / clk_dst posedge: 12.5, 37.5, 62.5, … ns
+- clk_src posedge: 5, 15, 25, … ns / clk_dst posedge: 12.5, 37.5, 62.5, … ns
+
+- TB는 `pulse_dst`와 보낸 수·받은 수(`sent`, `recv`)만 비교. 내부 신호(`tog_src`, `ff1`, `tog_sync`, `tog_dly`) 값은 파형으로 확인.
 
 | 단계 | 입력 변경 시각 | 입력 변경 | 확인 시각 | 확인할 값 |
 |---|---|---|---|---|
@@ -69,4 +71,12 @@ clk_src posedge: 5, 15, 25, … ns / clk_dst posedge: 12.5, 37.5, 62.5, … ns
 | 18 | 350ns | `pulse_src = 1` | 360ns | `tog_src = 0` |
 | 19 | 360ns | `pulse_src = 0` | 370ns | `ff1 = 0`, `tog_sync = 1` |
 | 20 | 370ns | 두 리셋 0 | 400ns | `tog_src`, `ff1`, `tog_sync`, `tog_dly`, `pulse_dst` = 0 |
-| 21 | 400ns | 두 리셋 1 | 450ns | 모두 0 (해제 후 2번째 에지 437.5ns 이후에도 `pulse_dst` 없음) |
+| 21 | 400ns | 두 리셋 1 | 450ns | 모두 0 (해제 후 2번째 에지 437.5ns 이후에도 `pulse_dst` 없음), `sent = 6`, `recv = 4` |
+
+## 5. 검증 결과
+
+- 시나리오 21단계 PASS (450ns). 비교는 `pulse_dst`와 보낸 수·받은 수
+- 250ns: sent 5, recv 3. 간격 위반 2건(195, 205ns)은 레벨이 원래 값으로 돌아와 유실
+- 320ns: dst만 리셋한 뒤 새 `pulse_src` 없이 가짜 펄스 발생
+- 450ns: sent 6, recv 4 (정상 3 + 가짜 1, 유실 3 = 간격 위반 2 + 전송 중 리셋 1)
+- 확인 못 한 것: 메타스터빌리티로 인한 1에지 추가 지연, 간격 조건의 setup/hold 부분
