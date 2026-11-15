@@ -162,3 +162,9 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 - PTR은 DEPTH에서 계산되므로 localparam으로 둠
 - mem에 reset은 각 셀에 0을 WRITE 하는 로직으로 합성되어 면적, 자원을 차지하고, mem에 reset을 하지 않아도 write가 되어 empty가 아닌 경우에만 read가 가능하므로 이전 값이 무엇이든 write로 덮어쓰기가 먼저 진행되어 reset 기능을 추가하지 않음
 - mem 쓰기를 reset으로 막지 않음 — reset 후 포인터가 0이라 그 값은 읽히지 않음
+
+## SPI v1 ASIC 리포트의 rst_n removal 위반 (SSDEC 7_CUSTOM_SPI, PrimeTime)
+- 경로: 입력 포트 `rst_n` → `state[2]` FF(DFFARX1_RVT)의 비동기 리셋 핀 `RSTB`. 클럭은 CTS 전 ideal.
+- 도착 0.20ns(입력 지연 가정) < 요구 0.30ns(removal) → slack −0.10ns.
+- 원인: RTL이 외부 `rst_n`을 동기화 없이 모든 FF의 비동기 리셋 핀에 연결했다. 실제 해제 시점은 클럭과 무관해 0.2ns 가정 자체가 보장되지 않는다.
+- 해결(v2에 적용): 리셋 동기화기 출력으로 `RSTB`를 구동해 해제를 clk 에지에 맞춘다. 외부 `rst_n` → 동기화기 경로는 false path로 처리한다.
