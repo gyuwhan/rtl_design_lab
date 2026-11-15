@@ -1,6 +1,7 @@
 # sync_fifo
 
 ## 1. 사양
+
 - 파라미터: DEPTH = 8, WIDTH = 10, PTR = $clog2(DEPTH) + 1
 - 포트: input: clk/1, rst_n/1, wr_data/WIDTH, rd_en/1, wr_en/1
        output: rd_data/WIDTH, empty/1, full/1
@@ -12,6 +13,20 @@
 - rd_data는 rd_en 다음 클럭에 출력
 - 읽기를 무시할 시 rd_data, rd_ptr 유지
 
+
+### 신호 분류
+
+| 신호 | 종류 | 정해지는 방식 |
+|---|---|---|
+| clk, rst_n, rd_en, wr_en, wr_data | 입력 | - |
+| empty | 조합 | `wr_ptr == rd_ptr` |
+| full | 조합 | `wr_ptr[PTR-1] != rd_ptr[PTR-1] && wr_ptr[PTR-2:0] == rd_ptr[PTR-2:0]` |
+| wr_accept | 조합 | full과 wr_en |
+| rd_accept | 조합 | rd_en과 empty |
+| mem | 순차 | wr_ptr, wr_accept를 보고 wr_data를 씀 |
+| wr_ptr | 순차 | 기존 wr_ptr, wr_accept |
+| rd_ptr | 순차 | 기존 rd_ptr, rd_accept |
+| rd_data | 순차 | mem, rd_ptr, rd_accept |
 
 
 ## 2. full/empty 판정 방법
@@ -130,24 +145,20 @@ DUT 파라미터: DEPTH = 4, WIDTH = 10
 - 버그 2를 처음 넣을 때 RTL 기본값(DEPTH = 8) 기준으로 [2:0]을 직접 적었는데, TB는 DEPTH = 4라 [2:0] 이 MSB를 포함한 포인터 전체여서 버그가 들어가지 않고 PASS가 나옴. 웨이브폼 확인 시 포인터가 MSB 1bit, 주소 2bit로 동작하는 것을 확인. 이후 파라미터를 기준으로 [PTR-2:0] 으로 수정 후 정상적으로 오류 검출 완료
 - 버그를 되돌린 뒤 다시 PASS 확인
 
+## 5. 합성
 
-## 신호 분류
+- 조건: xc7a35t, 10ns(100MHz), DEPTH 8, WIDTH 10, out_of_context, 합성 직후 리포트.
 
-| 신호 | 종류 | 정해지는 방식 |
-|---|---|---|
-| clk, rst_n, rd_en, wr_en, wr_data | 입력 | - |
-| empty | 조합 | `wr_ptr == rd_ptr` |
-| full | 조합 | `wr_ptr[PTR-1] != rd_ptr[PTR-1] && wr_ptr[PTR-2:0] == rd_ptr[PTR-2:0]` |
-| wr_accept | 조합 | full과 wr_en |
-| rd_accept | 조합 | rd_en과 empty |
-| mem | 순차 | wr_ptr, wr_accept를 보고 wr_data를 씀 |
-| wr_ptr | 순차 | 기존 wr_ptr, wr_accept |
-| rd_ptr | 순차 | 기존 rd_ptr, rd_accept |
-| rd_data | 순차 | mem, rd_ptr, rd_accept |
+### 합성 결과
+
+1. 타이밍: WNS 6.621ns, WHS 0.232ns로 위반 없이 통과.
+2. 가장 긴 setup 경로: `wr_ptr[0]` → LUT6(포인터 하위 3비트 비교) → LUT4(`!full && wr_en` = wr_accept) → `mem` 쓰기 enable. 데이터 지연 2.767ns 중 선 지연 68%.
+3. 가장 짧은 hold 경로: `wr_ptr[1]` → `mem` 쓰기 주소. 로직 0단.
+4. 자원: FF 18개(FDRE) = wr_ptr 4 + rd_ptr 4 + rd_data 10. 조합 LUT 10개. `mem` 80비트는 Distributed RAM(RAM32M 2개, LUT 8개)으로 구현, BRAM 0.
+   - mem 10비트 × 8칸은 비트마다 32칸 × 1비트 조각 하나(10조각, 각 8칸 사용). RAM32M 하나는 LUT 4개 중 읽기 주소를 따로 받는 A, B, C의 6비트만 FIFO 데이터에 쓸 수 있어 2개가 필요함(LUT D는 입력 핀이 공용 쓰기 주소로 쓰임).
 
 ## 설계 결정 기록
 - 바이패스, full에서 동시 쓰기 수락은 고려했지만 기본형을 먼저 완성하기 위해 넣지 않음
 - PTR은 DEPTH에서 계산되므로 localparam으로 둠
 - mem에 reset은 각 셀에 0을 WRITE 하는 로직으로 합성되어 면적, 자원을 차지하고, mem에 reset을 하지 않아도 write가 되어 empty가 아닌 경우에만 read가 가능하므로 이전 값이 무엇이든 write로 덮어쓰기가 먼저 진행되어 reset 기능을 추가하지 않음
 - mem 쓰기를 reset으로 막지 않음 — reset 후 포인터가 0이라 그 값은 읽히지 않음
-
