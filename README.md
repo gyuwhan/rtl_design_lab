@@ -10,6 +10,7 @@ Verilog로 디지털 기본 블록을 설계하고 self-checking 테스트벤치
 - Verilator: RTL lint (`--lint-only -Wall`)
 - Yosys: 합성 구조 확인
 - GTKWave: 파형 확인
+- Vivado 2025.2: FPGA 합성, 타이밍·자원 리포트 (`scripts/vivado_synth.tcl`)
 
 설치 버전은 [docs/tool-versions.txt](docs/tool-versions.txt)에 기록했습니다.
 
@@ -21,6 +22,8 @@ Verilog로 디지털 기본 블록을 설계하고 self-checking 테스트벤치
 | `tb/` | 테스트벤치 |
 | `docs/` | 환경 기록, 모듈별 설계 문서 |
 | `sim/` | 실행 파일, 로그, 파형 (Git 추적 제외) |
+| `scripts/` | Vivado 합성·리포트 스크립트 |
+| `build/` | Vivado 합성 결과 리포트 |
 
 ## 실행 방법
 
@@ -43,7 +46,17 @@ make clean                       # sim/의 생성 파일 삭제
 - 파형: `sim/mux2to1.vcd`
 
 PASS/FAIL은 테스트벤치가 판정합니다. Yosys 검사가 에러 없이 끝나도 latch가 없다는 뜻은 아니므로,
-로그 끝의 부품 목록에서 `$dlatch` 유무를 직접 확인합니다. FPGA 타이밍 충족도 이 검사로는 확인하지 않습니다.
+로그 끝의 부품 목록에서 `$dlatch` 유무를 직접 확인합니다. FPGA 타이밍 충족도 이 검사로는 확인하지 않으며,
+타이밍과 자원은 아래 Vivado 스크립트로 봅니다.
+
+### Vivado 합성과 리포트
+
+top 모듈, 클럭 포트, 클럭 주기(ns), RTL 파일을 인자로 받아 out-of-context로 합성하고 리포트 4종을 `build/`에 만듭니다.
+
+```bash
+vivado -mode batch -source scripts/vivado_synth.tcl \
+    -tclargs sync_fifo clk 10 rtl/sync_fifo.v
+```
 
 ### RTL 파일이 여러 개인 TB
 
@@ -113,8 +126,19 @@ vvp sim/sync_fifo_rand.vvp
 
 | 모듈 | 하는 일 | 확인한 것 |
 |---|---|---|
-| `sync_fifo` | 파라미터화한 동기 FIFO (`DEPTH`는 2 이상의 2의 거듭제곱). 포인터에 1비트를 더한 extra MSB 방식으로 full/empty 판정. full이면 쓰기, empty면 읽기 무시. `rd_data`는 읽기를 받은 다음 클럭에 출력 | TB: DEPTH 4 사이클별 예측표 순서로 입력해 매 사이클 비교 (동시 R/W, full에서 쓰기, empty에서 읽기, wrap-around 2회). 랜덤 TB(`tb_sync_fifo_rand`): count 방식 참조 모델과 비교, seed 1, 1000사이클, full 158, empty 89사이클 도달 확인. RTL에 버그 2개를 넣어 두 TB 모두 FAIL을 내는지 확인. lint는 기본값과 DEPTH=16·WIDTH=8에서 모두 경고 0개. 사양·예측표·설계 결정은 [docs/sync_fifo.md](docs/sync_fifo.md) |
+| `sync_fifo` | 파라미터화한 동기 FIFO (`DEPTH`는 2 이상의 2의 거듭제곱). 포인터에 1비트를 더한 extra MSB 방식으로 full/empty 판정. full이면 쓰기, empty면 읽기 무시. `rd_data`는 읽기를 받은 다음 클럭에 출력 | TB: DEPTH 4 사이클별 예측표 순서로 입력해 매 사이클 비교 (동시 R/W, full에서 쓰기, empty에서 읽기, wrap-around 2회). 랜덤 TB(`tb_sync_fifo_rand`): count 방식 참조 모델과 비교, seed 1, 1000사이클, full 158, empty 89사이클 도달 확인. RTL에 버그 2개를 넣어 두 TB 모두 FAIL을 내는지 확인. lint는 기본값과 DEPTH=16·WIDTH=8에서 모두 경고 0개. Vivado 10ns 제약: WNS 6.621ns, WHS 0.232ns, FF 18개, 메모리는 Distributed RAM(RAM32M 2개), BRAM 0개. 사양·예측표·설계 결정·합성 결과는 [docs/sync_fifo.md](docs/sync_fifo.md) |
 
+### CDC와 리셋
+
+| 모듈 | 하는 일 | 확인한 것 |
+|---|---|---|
+| `sync_2ff` | 1비트 레벨 신호용 2FF 동기화기 | RTL에 버그 2개를 넣어 TB가 잡는지 확인. 펄스 유실 실험: 수신 posedge가 없는 구간의 10ns 펄스가 사라짐(필요한 펄스 폭 > Tdst + setup + hold) |
+| `reset_sync` | 리셋 동기화기. 걸릴 때는 비동기, 풀릴 때는 수신 클럭에 동기 | RTL에 버그 2개를 넣어 TB가 잡는지 확인 |
+| `toggle_sync` | 펄스를 레벨 토글로 바꿔 전달하고 수신 쪽에서 XOR로 복원 | 보낸 수·받은 수 비교. 간격을 지키지 않으면 이벤트 2개 유실, 수신 쪽만 리셋하면 가짜 펄스 발생 |
+| `hs_sync` | 4-phase req/ack handshake로 멀티비트 데이터 전달. 전송 중 `data_hold` 유지, `valid_dst`는 레지스터 출력 | 신호를 기다리는 TB로 두 클럭 비율(10/25ns, 25/10ns)에서 PASS |
+
+부품이라 사양·예측표·확인 내용은 모듈별 문서 대신 [docs/cdc_note.md](docs/cdc_note.md)에 모았습니다.
+실제 메타스터빌리티(확률, MTBF)는 RTL 시뮬레이션으로 볼 수 없으므로, 확인한 범위는 구조와 시뮬레이션 동작까지입니다.
 
 ### 실험
 
