@@ -41,3 +41,63 @@
 ### 1-5. 결론
 - binary: 동기화된 포인터가 아무 값이나 될 수 있다. 1클럭만 틀려도 그 값으로 개수를 계산해 연달아 읽으면, 읽기 포인터가 쓰기 포인터를 앞질러 안 쓴 칸을 읽는다.
 - Gray: 옛 값 아니면 새 값만 보인다. 늦게 볼 수는 있어도 앞서 보지는 않으므로, empty·full이 일찍 뜰 수는 있지만 안 쓴 칸을 읽거나 안 읽은 칸에 쓰지는 않는다.
+
+### 1-6. Gray 값은 레지스터 출력으로 넘긴다
+- binary 포인터의 비트들은 같은 에지라도 바뀌는 시각이 조금씩 다르다(clock skew, clock-to-Q 차이, 배선 지연).
+- 그래서 bin2gray 조합 출력은 바뀌는 도중에 중간값을 거친다. 예: `0111 → 1000`에서 위 비트부터 바뀌면 binary `1111`, `1011`, `1001`을 거치고, Gray 출력은 `1000`, `1110`, `1101`(옛 값도 새 값도 아닌 값)을 거친다.
+- 같은 도메인에서는 받는 FF가 같은 클럭의 다음 에지에만 샘플링하고, 그 전에 안정되는지는 STA가 확인한다. 다른 도메인은 샘플링 시점이 보내는 쪽 클럭과 관계없어서 이 중간값을 잡을 수 있다.
+- 따라서 bin2gray 뒤에 보내는 쪽 클럭의 레지스터를 두고, 그 출력만 2FF로 넘긴다. 레지스터 출력은 에지마다 1비트만 바뀐다.
+
+## 2. 사양
+
+### 2-1. 사전 체크
+- `rd_data`: 등록 출력(`r_clk`). 읽기가 받아들여진 에지에서 `mem[rptr]`를 담고, 다음 읽기 전까지 유지한다. 레벨.
+- `full`: 등록 출력(`w_clk`). 마지막 칸을 채우는 쓰기가 받아들여지는 그 에지에 뜬다. 읽기 뒤 3번째 `w_clk` 에지(메타스테빌리티 시 4번째)에 풀린다. 레벨.
+- `empty`: 등록 출력(`r_clk`). 마지막 데이터를 읽는 그 에지에 뜬다. 쓰기 뒤 3번째 `r_clk` 에지(메타스테빌리티 시 4번째)에 풀린다. 레벨.
+- 겹치는 입력: 쓰기와 읽기는 각자 자기 클럭에서 따로 받아들여진다. full이면 쓰기만, empty면 읽기만 무시된다. 두 클럭 사이에 "같은 때"가 없으므로 bypass는 하지 않는다.
+
+### 2-2. 사양
+- **파라미터**: `DEPTH = 8`(최소 깊이), `DW = 10`, `AW = $clog2(DEPTH)`. 실제 칸 수는 `2^AW`이고, `DEPTH`가 2의 거듭제곱이 아니면 올림이 된다. Gray 포인터가 한 바퀴 돌 때도 1비트만 바뀌게 하려고 칸 수를 2의 거듭제곱으로 맞춘다.
+- **포인터 폭**: `AW + 1`비트(extra MSB). 메모리 주소는 아래 `AW`비트를 쓴다.
+- **포트**
+  - 입력: `w_clk`, `w_rst_n`, `wr_en`, `wr_data[DW-1:0]`, `r_clk`, `r_rst_n`, `rd_en`
+  - 출력: `full`, `rd_data[DW-1:0]`, `empty`
+- **리셋**: 두 리셋 모두 모듈 안에서 리셋 동기화기(`reset_sync`)로 동기화한다. async assert / sync deassert, active low.
+  - `w_rst_n`: `wptr`, `gray_wptr`, `sync_rptr` 2FF(두 단 모두), `full` = 0
+  - `r_rst_n`: `rptr`, `gray_rptr`, `sync_wptr` 2FF(두 단 모두), `rd_data` = 0, `empty` = 1
+- **리셋 조건**: 두 리셋을 함께 건다. 각 리셋은 자기 도메인만 초기화하므로, 한쪽만 리셋하면 포인터가 어긋나 가짜 empty·full이나 잘못된 읽기·쓰기가 생긴다.
+- **쓰기**: `wr_en && !full`이면 `w_clk` 에지에서 `mem[wptr[AW-1:0]]`에 `wr_data`를 쓰고 `wptr`를 1 올린다. full이면 쓰기를 무시한다.
+- **읽기**: `rd_en && !empty`이면 `r_clk` 에지에서 `mem[rptr[AW-1:0]]`을 `rd_data`에 담고 `rptr`를 1 올린다. empty면 읽기를 무시하고 `rd_data`, `rptr`를 유지한다.
+- **포인터 넘기기**: 다음 포인터(`wptr_next`, `rptr_next`)를 Gray로 바꿔 포인터와 같은 에지에 Gray 레지스터(`gray_wptr`, `gray_rptr`)에 담는다. 이 레지스터 출력을 상대 도메인의 2FF로 넘긴다. 2FF 앞에 조합 로직을 두지 않는다.
+- **비교 방식**: 받은 Gray 포인터(`sync_wptr`, `sync_rptr`)를 binary로 바꾼 뒤, 내 다음 포인터와 extra MSB 방식으로 비교한다.
+- **full, empty 판정**: 레지스터 출력. 현재 포인터로 계산하면 한 클럭 늦게 떠서 넘치거나 빈 칸을 읽으므로, 다음 포인터로 계산해 담는다.
+  - 뜰 때: 마지막 칸을 채우는 쓰기(마지막 데이터를 읽는 읽기)가 받아들여지는 그 에지
+  - 풀릴 때: 상대 쪽 동작 뒤 3번째 에지, 메타스테빌리티 시 4번째 (2FF 2클럭 + 판정 레지스터 1클럭)
+  - 늦게 풀리는 것은 보수적인 쪽이라 안전하다. 손해는 경계에서의 처리량뿐이다.
+- **2FF 지연**: 상대 포인터가 바뀐 뒤 2번째 에지, 메타스테빌리티 시 3번째 에지에 동기화된 값이 나온다.
+- **클럭 관계**: 두 클럭은 서로 비동기이고, 주파수 비율 제한은 없다. 비율에 따라 처리량, 필요한 DEPTH, full·empty가 풀리는 시간이 정해진다.
+
+### 2-3. 신호 분류
+
+| 신호 | 종류 | 정해지는 방식 |
+|---|---|---|
+| `w_clk`, `w_rst_n`, `wr_en`, `wr_data` | 입력 (w_clk) | - |
+| `r_clk`, `r_rst_n`, `rd_en` | 입력 (r_clk) | - |
+| `w_rst_n_sync` | w_clk 순차 | `w_rst_n`을 `reset_sync`로 동기화 |
+| `r_rst_n_sync` | r_clk 순차 | `r_rst_n`을 `reset_sync`로 동기화 |
+| `wr_accept` | w_clk 조합 | `wr_en && !full` |
+| `rd_accept` | r_clk 조합 | `rd_en && !empty` |
+| `wptr_next` | w_clk 조합 | `wptr + wr_accept` |
+| `rptr_next` | r_clk 조합 | `rptr + rd_accept` |
+| `wptr` | w_clk 순차 | `wptr_next`를 담음 |
+| `rptr` | r_clk 순차 | `rptr_next`를 담음 |
+| `gray_wptr` | w_clk 순차 | `wptr_next`를 Gray로 바꿔 담음 |
+| `gray_rptr` | r_clk 순차 | `rptr_next`를 Gray로 바꿔 담음 |
+| `sync_wptr` | r_clk 순차 | `gray_wptr`을 입력으로 하는 r_clk 2FF의 출력 |
+| `sync_rptr` | w_clk 순차 | `gray_rptr`을 입력으로 하는 w_clk 2FF의 출력 |
+| `sync_wptr_bin` | r_clk 조합 | `sync_wptr`를 binary로 변환 |
+| `sync_rptr_bin` | w_clk 조합 | `sync_rptr`를 binary로 변환 |
+| `empty` | r_clk 순차 | `rptr_next == sync_wptr_bin`을 담음 (리셋 1) |
+| `full` | w_clk 순차 | `wptr_next[AW] != sync_rptr_bin[AW] && wptr_next[AW-1:0] == sync_rptr_bin[AW-1:0]`을 담음 |
+| `mem` | 쓰기 w_clk / 읽기 r_clk | `wr_accept`일 때 `mem[wptr[AW-1:0]]`에 `wr_data`를 씀. `2^AW`칸 × `DW`비트 |
+| `rd_data` | r_clk 순차 | `rd_accept`일 때 `mem[rptr[AW-1:0]]`을 담음 |
