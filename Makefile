@@ -37,7 +37,7 @@ help:
 
 sim: $(RTL_SRC) $(TB_SRC)
 	@mkdir -p $(SIM_DIR)
-	iverilog -g2012 -Wall -s $(TB_TOP) -o $(OUT_VVP) $(TB_SRC) $(RTL_SRC) \
+	iverilog -g2012 -Wall -y rtl -s $(TB_TOP) -o $(OUT_VVP) $(TB_SRC) $(RTL_SRC) \
 		2>&1 | tee $(SIM_DIR)/$(TOP)_compile.log
 	@rm -f $(OUT_VCD)
 	vvp $(OUT_VVP) 2>&1 | tee $(SIM_DIR)/$(TOP)_run.log
@@ -48,13 +48,13 @@ wave: sim
 
 lint: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
-	verilator --lint-only -Wall --top-module $(TOP) $(RTL_SRC) \
+	verilator --lint-only -Wall -y rtl --top-module $(TOP) $(RTL_SRC) \
 		2>&1 | tee $(SIM_DIR)/$(TOP)_lint.log
 		@echo "$(TOP) lint 통과"
 
 synth-check: $(RTL_SRC)
 	@mkdir -p $(SIM_DIR)
-	@yosys -p "read_verilog -sv $(RTL_SRC); hierarchy -check -top $(TOP); proc; opt; check -assert; stat" \
+	@yosys -p "read_verilog -sv $(RTL_SRC); hierarchy -libdir rtl -check -top $(TOP); proc; opt; check -assert; stat" \
 		> $(SYNTH_LOG) 2>&1 \
 		|| { grep -E "ERROR|Warning" $(SYNTH_LOG); echo "합성 검사 실패: $(SYNTH_LOG)"; exit 1; }
 	@grep -E "Warning|^Latch inferred|Creating register|problems" $(SYNTH_LOG)
