@@ -87,7 +87,7 @@ initial begin
 
     rst_n = 0;
     #1;
-    check(1,1);
+    check(0,0);
 
     neg(1);
     check(0,0);
