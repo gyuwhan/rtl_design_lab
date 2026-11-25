@@ -2,7 +2,7 @@
 `timescale 1ns/1ps
 
 module async_fifo #(
-    parameter   DEPTH = 6,
+    parameter   DEPTH = 8,
                 DW    = 10
 )(
     input wire          w_clk,
@@ -22,19 +22,21 @@ module async_fifo #(
 localparam AW = $clog2(DEPTH);          // DEPTH 이상 최소 2의 거듭제곱값(PTR WIDTH)
 localparam REAL_DEPTH = (1 << AW);      // 실제 생성되는 MEM의 DEPTH
 
+reg [AW:0] wptr, gray_wptr;
+reg [AW:0] rptr, gray_rptr;
+
+wire [AW:0] sync_wptr, sync_rptr;
+
 wire w_rst_n_sync, r_rst_n_sync;        // reset sync 출력 연결
 
 wire wr_accept = wr_en && !full;        // 쓰기 수락
-wire rd_accept = rd_en && !empty;       // 입력 수락
+wire rd_accept = rd_en && !empty;       // 읽기 수락
 
 wire [AW:0] sync_wptr_bin = gray2bin(sync_wptr);
 wire [AW:0] sync_rptr_bin = gray2bin(sync_rptr);
 
 wire [AW:0] wptr_next = wptr + {{AW{1'b0}},wr_accept};
 wire [AW:0] rptr_next = rptr + {{AW{1'b0}},rd_accept};
-
-reg [AW:0] wptr, gray_wptr, sync_wptr;
-reg [AW:0] rptr, gray_rptr, sync_rptr;
 
 reg [DW-1:0] mem [0:REAL_DEPTH-1];
 
