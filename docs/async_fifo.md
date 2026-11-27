@@ -70,6 +70,7 @@
 - **읽기**: `rd_en && !empty`이면 `r_clk` 에지에서 `mem[rptr[AW-1:0]]`을 `rd_data`에 담고 `rptr`를 1 올린다. empty면 읽기를 무시하고 `rd_data`, `rptr`를 유지한다.
 - **포인터 넘기기**: 다음 포인터(`wptr_next`, `rptr_next`)를 Gray로 바꿔 포인터와 같은 에지에 Gray 레지스터(`gray_wptr`, `gray_rptr`)에 담는다. 이 레지스터 출력을 상대 도메인의 2FF로 넘긴다. 2FF 앞에 조합 로직을 두지 않는다.
 - **비교 방식**: 받은 Gray 포인터(`sync_wptr`, `sync_rptr`)를 binary로 바꾼 뒤, 내 다음 포인터와 extra MSB 방식으로 비교한다.
+  - **Gray끼리 비교**: empty는 `wptr_gray == rptr_gray`, full은 위 2비트가 반대이고 나머지가 같을 때 `(wptr_gray[AW-2:0] == rptr_gray[AW-2:0]) && (&(wptr_gray[AW:AW-1] ^ rptr_gray[AW:AW-1]))` (`AW ≥ 2`). 2FF 뒤 `gray2bin`이 없어 경로가 짧고 로직이 줄지만, 저장된 메모리 수, 나중에 almost_full/empty 출력을 추가하기 위해 binary가 필요해서 이 설계는 binary 비교로 했다.
 - **full, empty 판정**: 레지스터 출력. 현재 포인터로 계산하면 한 클럭 늦게 떠서 넘치거나 빈 칸을 읽으므로, 다음 포인터로 계산해 담는다.
   - 뜰 때: 마지막 칸을 채우는 쓰기(마지막 데이터를 읽는 읽기)가 받아들여지는 그 에지
   - 풀릴 때: 상대 쪽 동작 뒤 3번째 에지, 메타스테빌리티 시 4번째 (2FF 2클럭 + 판정 레지스터 1클럭)
