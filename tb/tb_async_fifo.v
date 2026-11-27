@@ -10,6 +10,10 @@ module tb_async_fifo #(
     localparam AW = $clog2(DEPTH);  
     localparam REAL_DEPTH = (1 << AW);
     localparam MAX_WR = 4096;
+    localparam RD_PROB = 25,
+                WR_PROB = 60;
+    localparam TIMEOUT = 100,
+                CYCLE = 1000;
 
     reg           w_clk;
     reg           w_rst_n;
@@ -26,9 +30,14 @@ module tb_async_fifo #(
 
     reg [DW-1:0] exp_mem [0:MAX_WR-1];
     reg [DW-1:0] tmp;
+
     integer wr_cnt, rd_cnt;
+
     reg read;
-    integer err;
+
+    integer err, k;
+    integer r_seed, w_seed;
+    integer cnt_full, cnt_empty, cnt_ignore_w, cnt_ignore_r;
 
 function [AW:0] gray2bin (input [AW:0] gray);
     integer i;
@@ -101,11 +110,9 @@ initial begin
     err = 0;
     $display("[%0t] AW=%0d REAL_DEPTH=%0d", $time, AW, REAL_DEPTH);
     #10;
-    wr_en = 0;
-    rd_en = 0;
-    w_rst_n = 0;
-    r_rst_n = 0;
-    rd_en = 0;
+    wr_en = 0;          rd_en = 0;
+    w_rst_n = 0;        r_rst_n = 0;
+    r_seed = 1;         w_seed = 2;
 
     #1; check(0,1,0,0);
     @(posedge w_clk); #1;
@@ -209,7 +216,43 @@ initial begin
     @(negedge r_clk);
     check(0,1,9,9);
     @(negedge r_clk);
+
+    //  random
+
+    fork : rand_phase
+        begin
+            repeat (CYCLE) begin
+                @(negedge w_clk);
+                wr_en = ({$random(w_seed)} % 100) < WR_PROB;
+                wr_data = $random(w_seed);
+            end
+            disable rand_phase;
+        end
+        begin
+            repeat (CYCLE) begin
+                @(negedge r_clk);
+                rd_en = ({$random(r_seed)} % 100) < RD_PROB;
+            end
+            disable rand_phase;
+        end
+    join
+
+    wr_en = 0;
+    rd_en = 0;
     
+    k = 0;
+    while((wr_cnt - rd_cnt !== 0) && k < TIMEOUT) begin
+        rd_en = 1;
+        k = k + 1;
+        @(negedge r_clk);
+    end
+
+    rd_en = 0;
+    @(posedge r_clk);
+    @(negedge r_clk);
+
+    $display("[%0t] full=%0d empty=%0d",$time, cnt_full, cnt_empty);
+    $display("[%0t] ignored write=%0d ignored read=%0d",$time, cnt_ignore_w, cnt_ignore_r);
     if(err !== 0) $display("[%0t] FAIL: error=%0d", $time, err);
     else $display("[%0t] PASS: error=%0d", $time, err);
     $finish;
@@ -273,6 +316,29 @@ always @(posedge r_clk or negedge r_rst_n) begin
 
     end
 end
+
+always @(posedge w_clk or negedge w_rst_n) begin
+    if(!w_rst_n) begin
+        cnt_full <= 0;
+        cnt_ignore_w <= 0;
+    end
+    else if(full) begin
+        cnt_full <= cnt_full + 1;
+        if(wr_en) cnt_ignore_w <= cnt_ignore_w + 1;
+    end
+end
+
+always @(posedge r_clk or negedge r_rst_n) begin
+    if(!r_rst_n) begin
+        cnt_empty <= 0;
+        cnt_ignore_r <= 0;
+    end
+    else if(empty) begin
+        cnt_empty <= cnt_empty + 1;
+        if(rd_en) cnt_ignore_r <= cnt_ignore_r + 1;
+    end
+end
+
 
 initial begin
     $dumpfile("sim/async_fifo.vcd");
