@@ -10,9 +10,8 @@ Verilog로 디지털 기본 블록을 설계하고 self-checking 테스트벤치
 - Verilator: RTL lint (`--lint-only -Wall`)
 - Yosys: 합성 구조 확인
 - GTKWave: 파형 확인
-- Vivado 2025.2: FPGA 합성, 타이밍·자원 리포트 (`scripts/vivado_synth.tcl`)
-
-설치 버전은 [docs/tool-versions.txt](docs/tool-versions.txt)에 기록했습니다.
+- Vivado 2025.2: FPGA 합성, 타이밍·자원·CDC 리포트 (`scripts/vivado_synth.tcl`, 클럭 두 개는 `scripts/vivado_synth_2clk.tcl`)
+- 설치 버전은 [docs/tool-versions.txt](docs/tool-versions.txt)에 기록했습니다.
 
 ## 디렉터리
 
@@ -56,6 +55,13 @@ top 모듈, 클럭 포트, 클럭 주기(ns), RTL 파일을 인자로 받아 out
 ```bash
 vivado -mode batch -source scripts/vivado_synth.tcl \
     -tclargs sync_fifo clk 10 rtl/sync_fifo.v
+```
+클럭이 2개인 설계는 `vivado_synth_2clk.tcl`을 씁니다. 결과 폴더 이름용 `tag`, 클럭 두 개와 주기를 받고, 두 클럭을 `set_clock_groups -asynchronous`로 묶은 뒤 리포트 4종과 `report_cdc`를 `build/<top>_<tag>/`에 만듭니다.
+
+```bash
+vivado -mode batch -source scripts/vivado_synth_2clk.tcl \
+    -tclargs async_fifo mem_sep w_clk 10 r_clk 27.027 \
+    rtl/async_fifo.v rtl/sync_2ff.v rtl/reset_sync.v
 ```
 
 ### RTL 파일이 여러 개인 TB
@@ -127,13 +133,14 @@ vvp sim/sync_fifo_rand.vvp
 | 모듈 | 하는 일 | 확인한 것 |
 |---|---|---|
 | `sync_fifo` | 파라미터화한 동기 FIFO (`DEPTH`는 2 이상의 2의 거듭제곱). 포인터에 1비트를 더한 extra MSB 방식으로 full/empty 판정. full이면 쓰기, empty면 읽기 무시. `rd_data`는 읽기를 받은 다음 클럭에 출력 | TB: DEPTH 4 사이클별 예측표 순서로 입력해 매 사이클 비교 (동시 R/W, full에서 쓰기, empty에서 읽기, wrap-around 2회). 랜덤 TB(`tb_sync_fifo_rand`): count 방식 참조 모델과 비교, seed 1, 1000사이클, full 158, empty 89사이클 도달 확인. RTL에 버그 2개를 넣어 두 TB 모두 FAIL을 내는지 확인. lint는 기본값과 DEPTH=16·WIDTH=8에서 모두 경고 0개. Vivado 10ns 제약: WNS 6.621ns, WHS 0.232ns, FF 18개, 메모리는 Distributed RAM(RAM32M 2개), BRAM 0개. 사양·예측표·설계 결정·합성 결과는 [docs/sync_fifo.md](docs/sync_fifo.md) |
+| `async_fifo` | 서로 다른 두 클럭 사이 FIFO (`DEPTH`는 2의 거듭제곱으로 올림, 두 리셋을 함께 건다). 다음 포인터를 Gray로 바꿔 레지스터에 담고 `sync_2ff`로 넘김. 받은 Gray를 binary로 바꿔 extra MSB 방식으로 full·empty 판정(다음 포인터로 계산한 레지스터 출력). 도메인마다 `reset_sync` | TB(`tb_async_fifo`): 직접 입력 시나리오 7개(리셋, full·empty가 뜨는 에지와 3번째 상승 에지 직후 풀림, 무시 동작, 순서)와 두 도메인 랜덤 입력(도메인별 seed, 각 1000사이클). 참조 배열·개수·Gray 일치 검사기를 항상 켜 둠. 쓰기 100MHz/읽기 37MHz와 반대 설정 모두 PASS, full·empty 도달과 무시된 요청 모두 0보다 큼. RTL에 버그 3개를 넣어 각각 다른 검사기가 잡는 것 확인. Vivado: 메모리 쓰기를 리셋 블록에서 분리하자 FF 128개 → 48개, 메모리가 FF에서 Distributed RAM(RAM32M 2개)으로 바뀜. WNS 7.307ns(`w_clk` 10ns), recovery·removal 통과. `report_cdc` 경고 2종의 이유 정리. 사양·예측표·검증·합성 결과는 [docs/async_fifo.md](docs/async_fifo.md) |
 
 ### CDC와 리셋
 
 | 모듈 | 하는 일 | 확인한 것 |
 |---|---|---|
-| `sync_2ff` | 1비트 레벨 신호용 2FF 동기화기 | RTL에 버그 2개를 넣어 TB가 잡는지 확인. 펄스 유실 실험: 수신 posedge가 없는 구간의 10ns 펄스가 사라짐(필요한 펄스 폭 > Tdst + setup + hold) |
-| `reset_sync` | 리셋 동기화기. 걸릴 때는 비동기, 풀릴 때는 수신 클럭에 동기 | RTL에 버그 2개를 넣어 TB가 잡는지 확인 |
+| `sync_2ff` | 2FF 동기화기. 폭 파라미터 `WIDTH`(기본 1), 비동기 리셋, 두 단에 `ASYNC_REG` | RTL에 버그 2개를 넣어 TB가 잡는지 확인. 펄스 유실 실험: 수신 posedge가 없는 구간의 10ns 펄스가 사라짐(필요한 펄스 폭 > Tdst + setup + hold) |
+| `reset_sync` | 리셋 동기화기. 걸릴 때는 비동기, 풀릴 때는 수신 클럭에 동기. 두 FF에 `ASYNC_REG` | RTL에 버그 2개를 넣어 TB가 잡는지 확인 |
 | `toggle_sync` | 펄스를 레벨 토글로 바꿔 전달하고 수신 쪽에서 XOR로 복원 | 보낸 수·받은 수 비교. 간격을 지키지 않으면 이벤트 2개 유실, 수신 쪽만 리셋하면 가짜 펄스 발생 |
 | `hs_sync` | 4-phase req/ack handshake로 멀티비트 데이터 전달. 전송 중 `data_hold` 유지, `valid_dst`는 레지스터 출력 | 신호를 기다리는 TB로 두 클럭 비율(10/25ns, 25/10ns)에서 PASS |
 
