@@ -55,8 +55,13 @@ reset_sync u_rst_rclk(
 always @(posedge w_clk or negedge w_rst_n_sync) begin
     if(!w_rst_n_sync) wptr <= 0;
     else if(wr_accept) begin
-        mem[wptr[AW-1:0]] <= wr_data;
         wptr <= wptr + 1;
+    end
+end
+
+always @(posedge w_clk) begin
+    if(wr_accept) begin
+        mem[wptr[AW-1:0]] <= wr_data;
     end
 end
 
